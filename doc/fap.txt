@@ -1,0 +1,27 @@
+* The Slasti Forum Access Protocol: Slasti-FAP *
+
+= overview
+
+The Forum is split into stateless and empemerical front-ends (that usually
+run in the context of webserver), and the service daemon that contains the
+state. The front-ends and the daemon communicate over the Slasti-FAP
+protocol (or simply FAP - when it is unambiguous in context).
+
+Peers in FAP exchage messages, encoded in JSON.
+
+= authentication
+
+Users of the forum are authenticated by the front-ends, but the access
+to FAP service is authenticated separately, with front-ends themselves
+being the principals. This is similar to how the usual webapps, such as
+WordPress, authenticate to a MySQL database.
+
+This design has two major flaws:
+ - A security flaw in one front-end may open access to data of all users
+   without a problem in FAP service.
+ - It is impossible for end-users to access the FAP service securely without
+   a front-end, no matter how sophisticated the client.
+
+Therefore, this decision is TBD. But for now, FAP supports authenticating
+users against a FAP service as if it were Kerberos.
+
