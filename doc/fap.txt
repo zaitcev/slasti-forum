@@ -2,12 +2,13 @@
 
 = overview
 
-The Forum is split into stateless and empemerical front-ends (that usually
+The Forum is split into stateless and ephemeral front-ends (that usually
 run in the context of webserver), and the service daemon that contains the
 state. The front-ends and the daemon communicate over the Slasti-FAP
 protocol (or simply FAP - when it is unambiguous in context).
 
-Peers in FAP exchage messages, encoded in JSON.
+Peers in FAP exchange messages, encoded in JSON. Messages are separated
+by a newline of whitespace.
 
 = authentication
 
@@ -24,4 +25,32 @@ This design has two major flaws:
 
 Therefore, this decision is TBD. But for now, FAP supports authenticating
 users against a FAP service as if it were Kerberos.
+
+= messages
+
+Type 0, server greeting, server to client:
+
+{ "type":0,
+  "challenge":"Y2hhbGxlbmdl" }
+
+Type 1, login, client to server:
+
+{ "type":1,
+  "hash":"sha256",
+  "user":"aniforum",
+  "login":"a640dda517d163fda7096521120cebe2da01af126b3df06eff11a6deb95e8392" }
+
+The login string is the challenge concatenated with the shared secret,
+then hashed.
+
+Type 2, ack, server to client:
+
+{ "type":2 }
+
+Type 3, nak, server to client:
+
+{ "type":3,
+  "error":"not logged in" }
+
+Strings are not localized.
 
