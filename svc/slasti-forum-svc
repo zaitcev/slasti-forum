@@ -1,0 +1,3 @@
+#!/bin/sh
+
+exec python /usr/share/slasti/forum/main.py /etc/slasti-forum.conf
