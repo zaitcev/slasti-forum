@@ -5,11 +5,20 @@
 # See file COPYING for licensing information (expect GPL 2).
 #
 
+import fcntl
+import os
+import os.path
+import select
+import socket
+import stat
+import struct
 import sys
 from iniparse import ConfigParser
-from ConfigParser import NoSectionError, NoOptionError
+from ConfigParser import NoSectionError, NoOptionError, ParsingError
 
 TAG = "forum-svc"
+USOCK = "/tmp/slasti-forum.sock"
+PIDFILE = "/var/run/slasti-forum-svc.pid"
 
 class AppError(Exception):
     pass
@@ -28,27 +37,91 @@ class ConfigError(Exception):
 # from iniparse import INIConfig
 # cfgpr = INIConfig(open(cfgname))
 
+def config_check(cfg):
+    if not os.path.isdir(cfg["base"]):
+        raise ConfigError("'%s' is not a directory" % cfg["base"])
+
 def config(cfgname, inisect):
     cfg = { }
     cfgpr = ConfigParser()
     try:
-        cfgpr.read(cfgname)
+        cfgpr.readfp(open(cfgname))
+    except IOError, e:
+        raise ConfigError(str(e))
+    except ParsingError, e:
+        # The str(e) may be multiline here, but oh well.
+        raise ConfigError("Unable to parse: " + str(e))
+
+    try:
         cfg["base"] = cfgpr.get(inisect, "base")
     except NoSectionError:
-        # Unfortunately if the file does not exist, we end here.
-        raise ConfigError("Unable to open or find section " + inisect)
+        raise ConfigError("Unable to find section '%s'" % inisect)
     except NoOptionError, e:
         raise ConfigError(str(e))
+
+    try:
+        cfg["usock"] = cfgpr.get(inisect, "socket")
+    except NoOptionError, e:
+        cfg["usock"] = USOCK
+    try:
+        cfg["pidfile"] = cfgpr.get(inisect, "pidfile")
+    except NoOptionError, e:
+        cfg["pidfile"] = PIDFILE
 
     #try:
     #    cfg["sleepval"] = float(cfg["sleep"])
     #except ValueError:
     #    raise ConfigError("Invalid sleep value " + cfg["sleep"])
 
+    config_check(cfg)
     return cfg
 
+# Packing by hand is mega annoying, but oh well.
+def write_pidfile(fname):
+    try:
+        fd = os.open(fname, os.O_WRONLY|os.O_CREAT, stat.S_IRUSR|stat.S_IWUSR)
+    except OSError, e:
+        raise AppError(str(e))
+    flockb = struct.pack('hhllhh', fcntl.F_WRLCK, 0, 0, 0, 0, 0)
+    try:
+        fcntl.fcntl(fd, fcntl.F_SETLK, flockb)
+    except IOError:
+        # EAGAIN is a specific code for already-locked, but whatever.
+        raise AppError("Cannot lock %s" % fname)
+    if os.write(fd, "%u\n" % os.getpid()) < 1:
+        raise AppError("Cannot write %s" % fname)
+    try:
+        os.fsync(fd)
+    except IOError:
+        raise AppError("Cannot fsync %s" % fname)
+    # not closing the fd, keep the lock
+    return fd
+
 def do(cfg):
-    print "base: ", cfg["base"]
+    # P3
+    print "base  : ", cfg["base"]
+    print "socket: ", cfg["usock"]
+
+    pidfd = write_pidfile(cfg["pidfile"])
+
+    poller = select.poll()
+
+    lsock = socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
+    lsock.bind(cfg["usock"])
+    lsock.listen(5)
+
+    poller.register(lsock.fileno(), select.POLLIN|select.POLLERR)
+
+    while 1:
+        # [(fd, ev)]
+        events = poller.poll()
+        for event in events:
+            if event[0] == lsock.fileno():
+                print "listened"
+                (csock, caddr) = lsock.accept()
+
+            else:
+                print "event 0x%x fd %d" % (event[1], event[0])
 
 def main(args):
     argc = len(args)
@@ -67,6 +140,10 @@ def main(args):
         do(cfg)
     except AppError, e:
         print >>sys.stderr, TAG+":", e
+        sys.exit(1)
+    except KeyboardInterrupt:
+        # The stock exit code is also 1 in case of signal, so we are not
+        # making it any worse. Just stubbing the traceback.
         sys.exit(1)
 
 # http://utcc.utoronto.ca/~cks/space/blog/python/ImportableMain
