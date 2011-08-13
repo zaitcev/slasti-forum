@@ -12,11 +12,15 @@ set +e
 rm -rf $base
 mkdir -p $base
 
+# XXX Generate a random admin password; it makes umask meaningful then.
+umask 077
+
 cat >$testconf <<EOF
 [svc]
 base = $base
 socket = $sock
 pidfile = $pidf
+admin = testtest
 EOF
 
 # XXX implement lockfile to make sure we do not start twice
@@ -41,8 +45,17 @@ if [ "$svcpid" != $(cat $pidf) ]; then
     exit 1
 fi
 
-# WRITE TESTS HERE
+cleanup () {
+    kill $(cat $pidf)
+}
 
-kill $(cat $pidf)
+# Test 1: basic operation
+python ./cli/main.py "$testconf" test1
+if [ $? != 0 ]; then
+    echo "FAILED: basic" >&2
+    cleanup
+    exit 1
+fi
 
+cleanup
 exit 0

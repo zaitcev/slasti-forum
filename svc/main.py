@@ -120,6 +120,10 @@ def do(cfg):
                 print "listened"
                 (csock, caddr) = lsock.accept()
 
+                # P3
+                msg = struct.pack("!IB", 1, 0x40)
+                csock.send(msg)
+
             else:
                 print "event 0x%x fd %d" % (event[1], event[0])
 
