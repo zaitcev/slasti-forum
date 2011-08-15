@@ -138,7 +138,7 @@ def do(cfg):
                 (csock, caddr) = lsock.accept()
                 conn = Connection(csock)
                 connections[csock.fileno()] = conn
-                # poller.register(csock.fileno(), select.POLLIN|select.POLLERR)
+                poller.register(csock.fileno(), select.POLLIN|select.POLLERR)
                 send_challenge(conn)
             else:
                 fd = event[0]
@@ -146,10 +146,33 @@ def do(cfg):
                 print "event 0x%x fd %d" % (event[1], fd)
                 if connections.has_key(fd):
                     conn = connections[fd]
-                    if conn.state == 0:
-                        print "connection found, no session"
+                    if event[1] & select.POLLNVAL:
+                        # P3
+                        print "event: POLLNVAL"
+                        poller.unregister(fd)
+                        connections[fd] = None
+                    elif event[1] & select.POLLHUP:
+                        # P3
+                        print "event: POLLHUP"
+                        poller.unregister(fd)
+                        connections[fd] = None
+                    elif event[1] & select.POLLERR:
+                        # P3
+                        print "event: POLLERR"
+                        poller.unregister(fd)
+                        connections[fd] = None
+                    elif event[1] & select.POLLIN:
+                        # P3
+                        print "event: POLLIN"
+                        if conn.state == 0:
+                            print "connection found, no session"
+                        else:
+                            print "connection found, has a session"
                     else:
-                        print "connection found, has a session"
+                        # P3
+                        print "event: UNKNOWN"
+                        poller.unregister(fd)
+                        connections[fd] = None
                 else:
                     # P3
                     print "UNKNOWN connection"
