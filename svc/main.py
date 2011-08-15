@@ -5,7 +5,9 @@
 # See file COPYING for licensing information (expect GPL 2).
 #
 
+import base64
 import fcntl
+import json
 import os
 import os.path
 import select
@@ -19,6 +21,8 @@ from ConfigParser import NoSectionError, NoOptionError, ParsingError
 TAG = "forum-svc"
 USOCK = "/tmp/slasti-forum.sock"
 PIDFILE = "/var/run/slasti-forum-svc.pid"
+
+connections = {}
 
 class AppError(Exception):
     pass
@@ -76,6 +80,11 @@ def config(cfgname, inisect):
     config_check(cfg)
     return cfg
 
+class Connection:
+    def __init__(self, sock):
+        self.sock = sock
+        self.state = 0
+
 # Packing by hand is mega annoying, but oh well.
 def write_pidfile(fname):
     try:
@@ -97,6 +106,15 @@ def write_pidfile(fname):
     # not closing the fd, keep the lock
     return fd
 
+def send_challenge(conn):
+    # XXX use a random number in the challenge
+    chbin = struct.pack("I", 500)
+    chstr = base64.b64encode(chbin)
+    struc = { "type": 0, "challenge": chstr }
+    jmsg = json.dumps(struc)
+    msg = struct.pack("!I%ds"%len(jmsg), len(jmsg), jmsg)
+    conn.sock.send(msg)
+
 def do(cfg):
     # P3
     print "base  : ", cfg["base"]
@@ -117,15 +135,24 @@ def do(cfg):
         events = poller.poll()
         for event in events:
             if event[0] == lsock.fileno():
-                print "listened"
                 (csock, caddr) = lsock.accept()
-
-                # P3
-                msg = struct.pack("!IB", 1, 0x40)
-                csock.send(msg)
-
+                conn = Connection(csock)
+                connections[csock.fileno()] = conn
+                # poller.register(csock.fileno(), select.POLLIN|select.POLLERR)
+                send_challenge(conn)
             else:
-                print "event 0x%x fd %d" % (event[1], event[0])
+                fd = event[0]
+                # P3
+                print "event 0x%x fd %d" % (event[1], fd)
+                if connections.has_key(fd):
+                    conn = connections[fd]
+                    if conn.state == 0:
+                        print "connection found, no session"
+                    else:
+                        print "connection found, has a session"
+                else:
+                    # P3
+                    print "UNKNOWN connection"
 
 def main(args):
     argc = len(args)

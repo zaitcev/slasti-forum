@@ -44,7 +44,7 @@ def config(cfgname):
 
     return cfg
 
-# Pull a string of size bytes out of the list of strings, copy it out.
+# Pull a bytearray of size bytes out of the list of strings, copy it out.
 def skb_pull_copy(mbufs, size):
     v = bytearray(size)
     mx = 0
@@ -52,61 +52,69 @@ def skb_pull_copy(mbufs, size):
     done = 0
     while done < size:
        mbuf = mbufs[mx]
-       v[done] = mbuf[x]
-       done += 1
-       x += 1
+       steplen = size - done
+       if len(mbuf) < steplen:
+           steplen = len(mbuf)
+       v[done:done+steplen] = mbuf[x:x+steplen]
+       done += steplen
+       x += steplen
        if x >= len(mbuf):
            x = 0
            mx += 1
-    return str(v)
+    return v
+
+# Pull a bytearray from mbufs and (in the future XXX) remove from mbufs,
+# in order to permit repeated pull calls when the message length is known.
+# XXX For now, we just do nothing... so it's the same deal as skb_pull_copy.
+def skb_pull(mbufs, size):
+    return skb_pull_copy(mbufs, size)
 
 # Receive a FAP message, using the low-level framing.
+# XXX The rougue client can hang us by sending a partial message and no data.
 def rec_msg(sock):
     mbufs = []
-    done = 0
-    while done < 4:
+    rcvd = 0
+
+    while rcvd < 4:
         mbuf = sock.recv(4096)
         if mbuf == None:
-            # Curious.... XXX
+            # Curious - does it happen? XXX
             print >>sys.stderr, "Received None"
             sys.exit(1)
         mbufs.append(mbuf)
-        done += len(mbuf)
+        rcvd += len(mbuf)
 
     hdr = skb_pull_copy(mbufs, 4)
-    # P3
-    print "header[%d]:" % len(hdr), hdr
 
-    # This produces a string:
-    # length = hdr[1]*256*256 + hdr[2]*256 + hdr[3]
-    length = struct.unpack("!I", hdr)[0] & 0xFFFFFF
-    # P3
-    print "body[%d]" % length
+    # This produces a string if hdr is an str. Works great for bytearray.
+    length = hdr[1]*256*256 + hdr[2]*256 + hdr[3]
+    # This works if hdr is a string, fails for bytearray with struct.error.
+    # length = struct.unpack("!I", hdr)[0] & 0xFFFFFF
 
-    while done < length:
+    while rcvd < 4 + length:
         mbuf = sock.recv(4096)
         if mbuf == None:
             print >>sys.stderr, "Received None"
             sys.exit(1)
         mbufs.append(mbuf)
-        done += len(mbuf)
+        rcvd += len(mbuf)
 
-    # P3
-    print "done"
+    buf = skb_pull(mbufs, 4 + length)
 
-    # return skb_pull(mbufs)
+    # Is this a double copy? Not very efficient, if so.
+    return str(buf[4:])
 
 def do(cfg, cmd):
     ssock = socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
     ssock.connect(cfg["usock"])
-    # P3
-    print "connected"
 
     if cmd == None:
         # XXX Actually better error out or print server stats or something
         pass
     if cmd == "test1":
-        rec_msg(ssock)
+        msg = rec_msg(ssock)
+        # P3
+        print "received[%d]: "%len(msg), msg
     else:
         print >>sys.stderr, "Unknown command '" + cmd + "'"
         sys.exit(1)
