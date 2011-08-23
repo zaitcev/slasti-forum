@@ -5,6 +5,9 @@
 # See file COPYING for licensing information (expect GPL 2).
 #
 
+import base64
+import hashlib
+import json
 import socket
 import struct
 import sys
@@ -27,6 +30,8 @@ class ConfigError(Exception):
     pass
 
 def config(cfgname):
+    inisect = "svc"
+
     cfg = { }
     cfgpr = ConfigParser()
     try:
@@ -38,12 +43,20 @@ def config(cfgname):
         raise ConfigError("Unable to parse: " + str(e))
 
     try:
-        cfg["usock"] = cfgpr.get("svc", "socket")
+        cfg["admin"] = cfgpr.get(inisect, "admin")
+    except NoSectionError:
+        raise ConfigError("Unable to find section '%s'" % inisect)
+    except NoOptionError, e:
+        raise ConfigError(str(e))
+
+    try:
+        cfg["usock"] = cfgpr.get(inisect, "socket")
     except NoOptionError, e:
         cfg["usock"] = USOCK
 
     return cfg
 
+# XXX Find a way to share this with svc/.
 # Pull a bytearray of size bytes out of the list of strings, copy it out.
 def skb_pull_copy(mbufs, size):
     v = bytearray(size)
@@ -104,6 +117,16 @@ def rec_msg(sock):
     # Is this a double copy? Not very efficient, if so.
     return str(buf[4:])
 
+def send_login(sock, chbin, user, password):
+    loghash = hashlib.sha256()
+    loghash.update(chbin+password)
+    # We use hex instead of base64 because it's easy to test in shell.
+    logstr = loghash.hexdigest()
+    struc = { "type": 1, "hash": "sha256", "user": user, "login": logstr }
+    jmsg = json.dumps(struc)
+    msg = struct.pack("!I%ds"%len(jmsg), len(jmsg), jmsg)
+    sock.send(msg)
+
 def do(cfg, cmd):
     ssock = socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
     ssock.connect(cfg["usock"])
@@ -115,6 +138,19 @@ def do(cfg, cmd):
         msg = rec_msg(ssock)
         # P3
         print "received[%d]: "%len(msg), msg
+        struc = json.loads(msg)
+        if struc['type'] != 0:
+            print >>sys.stderr, "Expected type 0, received", struc['type']
+            sys.exit(1)
+
+        # if not struc.has_key('challenge'): --- something
+        chbin = base64.b64decode(struc['challenge'])
+        send_login(ssock, chbin, "admin", cfg['admin'])
+
+        msg = rec_msg(ssock)
+        # P3
+        print "received[%d]: "%len(msg), msg
+        struc = json.loads(msg)
     else:
         print >>sys.stderr, "Unknown command '" + cmd + "'"
         sys.exit(1)

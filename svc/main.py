@@ -58,6 +58,7 @@ def config(cfgname, inisect):
 
     try:
         cfg["base"] = cfgpr.get(inisect, "base")
+        cfg["admin"] = cfgpr.get(inisect, "admin")
     except NoSectionError:
         raise ConfigError("Unable to find section '%s'" % inisect)
     except NoOptionError, e:
@@ -80,10 +81,38 @@ def config(cfgname, inisect):
     config_check(cfg)
     return cfg
 
+# XXX Find a way to share this with cli/.
+# Pull a bytearray of size bytes out of the list of strings, copy it out.
+def skb_pull_copy(mbufs, size):
+    v = bytearray(size)
+    mx = 0
+    x = 0
+    done = 0
+    while done < size:
+       mbuf = mbufs[mx]
+       steplen = size - done
+       if len(mbuf) < steplen:
+           steplen = len(mbuf)
+       v[done:done+steplen] = mbuf[x:x+steplen]
+       done += steplen
+       x += steplen
+       if x >= len(mbuf):
+           x = 0
+           mx += 1
+    return v
+
+# Pull a bytearray from mbufs and (in the future XXX) remove from mbufs,
+# in order to permit repeated pull calls when the message length is known.
+# XXX For now, we just do nothing... so it's the same deal as skb_pull_copy.
+def skb_pull(mbufs, size):
+    return skb_pull_copy(mbufs, size)
+
 class Connection:
     def __init__(self, sock):
         self.sock = sock
         self.state = 0
+        self.mbufs = []
+        self.rcvd = 0
 
 # Packing by hand is mega annoying, but oh well.
 def write_pidfile(fname):
@@ -105,6 +134,54 @@ def write_pidfile(fname):
         raise AppError("Cannot fsync %s" % fname)
     # not closing the fd, keep the lock
     return fd
+
+def send_ack(conn):
+    struc = { "type": 2 }
+    jmsg = json.dumps(struc)
+    msg = struct.pack("!I%ds"%len(jmsg), len(jmsg), jmsg)
+    conn.sock.send(msg)
+
+def recv_msg(conn, msg):
+    # P3
+    print "svc-rcvd[%d]: "%len(msg), msg
+    struc = json.loads(msg)
+    print "type:", struc['type']
+
+    # XXX add a complete type switch with error checking
+    if struc['type'] == 1:
+        # XXX verify password
+        send_ack(conn)
+
+def recv_event(conn):
+    # Always receive the socket data, or else the poll would loop.
+    mbuf = conn.sock.recv(4096)
+    if mbuf == None:
+        # Curious - does it happen? XXX
+        print >>sys.stderr, "Received None"
+        sys.exit(1)
+    conn.mbufs.append(mbuf)
+    conn.rcvd += len(mbuf)
+
+    if conn.rcvd < 4:
+        return
+    hdr = skb_pull_copy(conn.mbufs, 4)
+
+    # This produces a string if hdr is an str. Works great for bytearray.
+    length = hdr[1]*256*256 + hdr[2]*256 + hdr[3]
+    # This works if hdr is a string, fails for bytearray with struct.error.
+    # length = struct.unpack("!I", hdr)[0] & 0xFFFFFF
+
+    if conn.rcvd < 4 + length:
+        return
+    buf = skb_pull(conn.mbufs, 4 + length)
+
+    recv_msg(conn, str(buf[4:]))
+
+    # XXX Fix this once skb_pull works as intended.
+    conn.mbufs = []
+    conn.rcvd = 0
+
+    return
 
 def send_challenge(conn):
     # XXX use a random number in the challenge
@@ -142,8 +219,6 @@ def do(cfg):
                 send_challenge(conn)
             else:
                 fd = event[0]
-                # P3
-                print "event 0x%x fd %d" % (event[1], fd)
                 if connections.has_key(fd):
                     conn = connections[fd]
                     if event[1] & select.POLLNVAL:
@@ -168,6 +243,7 @@ def do(cfg):
                             print "connection found, no session"
                         else:
                             print "connection found, has a session"
+                        recv_event(conn)
                     else:
                         # P3
                         print "event: UNKNOWN"
