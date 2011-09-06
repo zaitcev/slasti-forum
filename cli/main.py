@@ -127,6 +127,19 @@ def send_login(sock, chbin, user, password):
     msg = struct.pack("!I%ds"%len(jmsg), len(jmsg), jmsg)
     sock.send(msg)
 
+def send_newsec(sock, sect, title, desc):
+    # No bundle for now.
+    struc = { "type": 4, "name": sect, "title": title, "desc": desc }
+    jmsg = json.dumps(struc)
+    msg = struct.pack("!I%ds"%len(jmsg), len(jmsg), jmsg)
+    sock.send(msg)
+
+def send_quit(sock):
+    struc = { "type": 5 }
+    jmsg = json.dumps(struc)
+    msg = struct.pack("!I%ds"%len(jmsg), len(jmsg), jmsg)
+    sock.send(msg)
+
 def do(cfg, cmd):
     ssock = socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
     ssock.connect(cfg["usock"])
@@ -135,12 +148,14 @@ def do(cfg, cmd):
         # XXX Actually better error out or print server stats or something
         pass
     if cmd == "test1":
+        ##
+        ## Login
+        ##
         msg = rec_msg(ssock)
-        # P3
-        print "received[%d]: "%len(msg), msg
         struc = json.loads(msg)
         if struc['type'] != 0:
-            print >>sys.stderr, "Expected type 0, received", struc['type']
+            print >>sys.stderr, \
+                  "Expected type 0, received", struc['type']
             sys.exit(1)
 
         # if not struc.has_key('challenge'): --- something
@@ -148,9 +163,31 @@ def do(cfg, cmd):
         send_login(ssock, chbin, "admin", cfg['admin'])
 
         msg = rec_msg(ssock)
+        struc = json.loads(msg)
+        if struc['type'] != 2:
+            print >>sys.stderr, \
+                  "Expected type 2 after login, received", struc['type']
+            sys.exit(1)
+
+        ##
+        ## Create a section
+        ##
+        send_newsec(ssock, "/test", "Test", "A test section")
+
+        msg = rec_msg(ssock)
         # P3
         print "received[%d]: "%len(msg), msg
         struc = json.loads(msg)
+        if struc['type'] != 2:
+            print >>sys.stderr, \
+                  "Expected type 2 after new section, received", struc['type']
+            sys.exit(1)
+
+        ##
+        ## Quit
+        ##
+        send_quit(ssock)
+
     else:
         print >>sys.stderr, "Unknown command '" + cmd + "'"
         sys.exit(1)

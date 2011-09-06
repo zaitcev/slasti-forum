@@ -61,3 +61,38 @@ Type 3, nak, server to client:
 
 Error strings are not localized.
 
+Type 4, create section, client to server:
+
+{ "type":4,
+  "bundle":"main",
+  "name":"/shaft",
+  "title":"Everything SHAFT",
+  "desc":"Updates and discussions of studio SHAFT and Akayuki Shinbo" }
+
+Bundle is a presentation marker, to help group forums together, as done
+by meta-forums of vBulletin and phpBB. Bundles are not like directories
+or buckets, in that they do not contain sections, but merely tag them.
+Bundle is optional, for small forums like VIP-89. If bundle is not set,
+it is unherited from the section's parent, or root. It may be none.
+
+The name has to start with a slash, just because, even on servers that
+do not support recursive sections.
+
+The Type 4 message is replied with Type 2 ack or Type 3 nak.
+
+Type 5, quit, client to server:
+
+{ "type":5 }
+
+This is the only client message that receives no reply from the server.
+Instead, the server closes the communication channel.
+
+In protocols layered over TCP/IP, the explicit quit is vital when messages
+and their actions are not idempotent (such as the case of SMTP). Without
+an explicit quit, server cannot be certain that the client received the
+last reply (in SMTP this would cause e-mail messages to replicate). In
+FAP, this may cause problems when posting. In the end we would just end
+with front-ends stuffing the connection with idempotent messages after
+every post... which they do anyway, so it's not like we really need this.
+However, we specify the explicit quit just in case.
+

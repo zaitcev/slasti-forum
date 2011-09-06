@@ -113,6 +113,10 @@ class Connection:
         self.state = 0
         self.mbufs = []
         self.rcvd = 0
+    def mark_login(self):
+        self.state = 1
+    def mark_dead(self):
+        self.state = 2
 
 # Packing by hand is mega annoying, but oh well.
 def write_pidfile(fname):
@@ -141,18 +145,40 @@ def send_ack(conn):
     msg = struct.pack("!I%ds"%len(jmsg), len(jmsg), jmsg)
     conn.sock.send(msg)
 
-def recv_msg(conn, msg):
+def send_nak(conn, msg):
+    struc = { "type": 3, "error": msg }
+    jmsg = json.dumps(struc)
+    msg = struct.pack("!I%ds"%len(jmsg), len(jmsg), jmsg)
+    conn.sock.send(msg)
+
+def recv_msg(conn, msg, cfg):
     # P3
     print "svc-rcvd[%d]: "%len(msg), msg
     struc = json.loads(msg)
     print "type:", struc['type']
 
-    # XXX add a complete type switch with error checking
     if struc['type'] == 1:
         # XXX verify password
+        conn.mark_login()
         send_ack(conn)
+    elif struc['type'] == 4:
+        if struc['name'][0:1] != "/":
+            send_nak(conn, "no leading slash")
+            return
+        try:
+            os.mkdir(cfg['base']+struc['name'])
+        except OSError, e:
+            send_nak(conn, "unable to create")
+        except:
+            # TypeError or KeyError if wrong structure
+            send_nak(conn, "exception on create")
+        send_ack(conn)
+    elif struc['type'] == 5:
+        conn.mark_dead()
+    else:
+        send_nak(conn, "unknown msg type %s" % str(struc['type']))
 
-def recv_event(conn):
+def recv_event(conn, cfg):
     # Always receive the socket data, or else the poll would loop.
     mbuf = conn.sock.recv(4096)
     if mbuf == None:
@@ -175,7 +201,7 @@ def recv_event(conn):
         return
     buf = skb_pull(conn.mbufs, 4 + length)
 
-    recv_msg(conn, str(buf[4:]))
+    recv_msg(conn, str(buf[4:]), cfg)
 
     # XXX Fix this once skb_pull works as intended.
     conn.mbufs = []
@@ -222,31 +248,25 @@ def do(cfg):
                 if connections.has_key(fd):
                     conn = connections[fd]
                     if event[1] & select.POLLNVAL:
-                        # P3
-                        print "event: POLLNVAL"
                         poller.unregister(fd)
                         connections[fd] = None
                     elif event[1] & select.POLLHUP:
-                        # P3
-                        print "event: POLLHUP"
                         poller.unregister(fd)
                         connections[fd] = None
                     elif event[1] & select.POLLERR:
-                        # P3
-                        print "event: POLLERR"
                         poller.unregister(fd)
                         connections[fd] = None
                     elif event[1] & select.POLLIN:
                         # P3
-                        print "event: POLLIN"
                         if conn.state == 0:
                             print "connection found, no session"
                         else:
                             print "connection found, has a session"
-                        recv_event(conn)
+                        recv_event(conn, cfg)
+                        if conn.state == 2:
+                            poller.unregister(fd)
+                            connections[fd] = None
                     else:
-                        # P3
-                        print "event: UNKNOWN"
                         poller.unregister(fd)
                         connections[fd] = None
                 else:
