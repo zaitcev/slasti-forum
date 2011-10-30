@@ -151,30 +151,48 @@ def send_nak(conn, msg):
     msg = struct.pack("!I%ds"%len(jmsg), len(jmsg), jmsg)
     conn.sock.send(msg)
 
+def new_section(conn, struc, cfg):
+    if struc['name'][0:1] != "/":
+        send_nak(conn, "no leading slash")
+        return
+    try:
+        os.mkdir(cfg['base']+struc['name'])
+    except OSError, e:
+        send_nak(conn, "unable to create")
+        return
+    except:
+        # TypeError or KeyError if wrong structure
+        send_nak(conn, "exception on create")
+        return
+    send_ack(conn)
+
+def new_thread(conn, struc):
+    # XXX do something
+    print("new thread")
+    send_ack(conn)
+
+def new_message(conn, struc):
+    # XXX do something
+    print("new message")
+    send_ack(conn)
+
 def recv_msg(conn, msg, cfg):
     # P3
     print "svc-rcvd[%d]: "%len(msg), msg
     struc = json.loads(msg)
-    print "type:", struc['type']
 
     if struc['type'] == 1:
         # XXX verify password
         conn.mark_login()
         send_ack(conn)
     elif struc['type'] == 4:
-        if struc['name'][0:1] != "/":
-            send_nak(conn, "no leading slash")
-            return
-        try:
-            os.mkdir(cfg['base']+struc['name'])
-        except OSError, e:
-            send_nak(conn, "unable to create")
-        except:
-            # TypeError or KeyError if wrong structure
-            send_nak(conn, "exception on create")
-        send_ack(conn)
+        new_section(conn, struc, cfg)
     elif struc['type'] == 5:
         conn.mark_dead()
+    elif struc['type'] == 6:
+        new_message(conn, struc)
+    elif struc['type'] == 7:
+        new_thread(conn, struc)
     else:
         send_nak(conn, "unknown msg type %s" % str(struc['type']))
 
@@ -210,9 +228,7 @@ def recv_event(conn, cfg):
     return
 
 def send_challenge(conn):
-    # XXX use a random number in the challenge
-    chbin = struct.pack("I", 500)
-    chstr = base64.b64encode(chbin)
+    chstr = base64.b64encode(os.urandom(4))
     struc = { "type": 0, "challenge": chstr }
     jmsg = json.dumps(struc)
     msg = struct.pack("!I%ds"%len(jmsg), len(jmsg), jmsg)

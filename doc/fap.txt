@@ -96,3 +96,24 @@ with front-ends stuffing the connection with idempotent messages after
 every post... which they do anyway, so it's not like we really need this.
 However, we specify the explicit quit just in case.
 
+Type 6, new message, client to server:
+
+{ "type":6,
+  "section":"/shaft",
+  "thread":"515",
+  "name":"a4943458",
+  "body":"As if anyone needed any further proof." }
+
+The section, thread, and name are respective keys.
+
+Type 7, new thread, client to server:
+
+{ "type":7,
+  "section":"/shaft",
+  "name":   "515",
+  "subject":"Shinbo lost it" }
+
+The "thread" field is an key in an index, usually not descriptive.
+
+We may allow to use the same message in order to edit the subject of
+an existing thread. Haven't decided yet.
