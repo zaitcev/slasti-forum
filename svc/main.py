@@ -164,16 +164,84 @@ def new_section(conn, struc, cfg):
         # TypeError or KeyError if wrong structure
         send_nak(conn, "exception on create")
         return
+
+    try:
+        f = open(cfg['base']+struc['name']+'.sum', "w+")
+    except IOError, e:
+        send_nak(conn, "exception on summary")
+        return
+
+    f.write(struc['title'])
+    f.write("\n")
+
+    f.close()
+
     send_ack(conn)
 
-def new_thread(conn, struc):
-    # XXX do something
-    print("new thread")
+def new_thread(conn, struc, cfg):
+    try:
+        sect = struc['section']
+        if sect[0:1] != "/":
+            send_nak(conn, "no leading slash")
+            return
+    except:
+        # TypeError or KeyError if wrong structure
+        send_nak(conn, "exception")
+        return
+    if not os.path.isdir(cfg['base']+sect):
+        send_nak(conn, "bad section")
+        return
+
+    try:
+        # XXX the 'name' needs to be validated against slash and '..'
+        os.mkdir(cfg['base']+sect+'/'+struc['name'])
+    except OSError, e:
+        send_nak(conn, "unable to create")
+        return
+    except:
+        # TypeError or KeyError if wrong structure
+        send_nak(conn, "exception on create")
+        return
+
+    try:
+        f = open(cfg['base']+sect+'/'+struc['name']+'.sum', "w+")
+    except IOError, e:
+        send_nak(conn, "exception on summary")
+        return
+
+    f.write(struc['subject'])
+    f.write("\n")
+
+    f.close()
+
     send_ack(conn)
 
-def new_message(conn, struc):
-    # XXX do something
-    print("new message")
+def new_message(conn, struc, cfg):
+    try:
+        sect = struc['section']
+        if sect[0:1] != "/":
+            send_nak(conn, "no leading slash")
+            return
+        thrd = struc['thread']
+    except:
+        # TypeError or KeyError if wrong structure
+        send_nak(conn, "exception")
+        return
+    if not os.path.isdir(cfg['base']+sect+'/'+thrd):
+        send_nak(conn, "bad thread path")
+        return
+
+    try:
+        f = open(cfg['base']+sect+'/'+thrd+'/'+struc['name'], "w+")
+    except IOError, e:
+        send_nak(conn, "exception on summary")
+        return
+
+    f.write(struc['body'])
+    f.write("\n")
+
+    f.close()
+
     send_ack(conn)
 
 def recv_msg(conn, msg, cfg):
@@ -190,9 +258,9 @@ def recv_msg(conn, msg, cfg):
     elif struc['type'] == 5:
         conn.mark_dead()
     elif struc['type'] == 6:
-        new_message(conn, struc)
+        new_message(conn, struc, cfg)
     elif struc['type'] == 7:
-        new_thread(conn, struc)
+        new_thread(conn, struc, cfg)
     else:
         send_nak(conn, "unknown msg type %s" % str(struc['type']))
 

@@ -93,8 +93,11 @@ def rec_msg(sock):
     while rcvd < 4:
         mbuf = sock.recv(4096)
         if mbuf == None:
-            # Curious - does it happen? XXX
+            # Curious - does it happen? EOF does, but not this? XXX
             print >>sys.stderr, "Received None"
+            sys.exit(1)
+        if len(mbuf) == 0:
+            print >>sys.stderr, "Received EOF"
             sys.exit(1)
         mbufs.append(mbuf)
         rcvd += len(mbuf)
@@ -110,6 +113,9 @@ def rec_msg(sock):
         mbuf = sock.recv(4096)
         if mbuf == None:
             print >>sys.stderr, "Received None"
+            sys.exit(1)
+        if len(mbuf) == 0:
+            print >>sys.stderr, "Received EOF"
             sys.exit(1)
         mbufs.append(mbuf)
         rcvd += len(mbuf)
@@ -206,12 +212,10 @@ def do(cfg, cmd):
         ##
         thrname = send_newthread(ssock, secname, "Test subject")
         msg = rec_msg(ssock)
-        # P3
-        print "received[%d]: "%len(msg), msg
         struc = json.loads(msg)
         if struc['type'] != 2:
             print >>sys.stderr, \
-                  "Expected type 2 after new message, received", struc['type']
+                  "Expected type 2 after new thread, received", struc['type']
             sys.exit(1)
 
         ##
