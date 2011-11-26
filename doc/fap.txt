@@ -15,23 +15,19 @@ byte 1,2,3: length in network order
 
 = authentication
 
-Users of the forum are authenticated by the front-ends, but the access
-to FAP service is authenticated separately, with front-ends themselves
-being the principals. This is similar to how the usual webapps, such as
-WordPress, authenticate to a MySQL database.
+Authenticated principals may be both users and the front-ends themselves.
+In the latter case, front-ends authenticate users, and thus have to be
+privileged, to access data of any user. The arrangement in such case is
+similar to the way usual webapps, such as WordPress, authenticate to
+a MySQL database. It is also insecure, because a security flaw in one
+front-end may open access to data of all users without a compromise
+of FAP service.
 
-This design has two major flaws:
- - A security flaw in one front-end may open access to data of all users
-   without a problem in FAP service.
- - It is impossible for end-users to access the FAP service securely without
-   a front-end, no matter how sophisticated the client.
+Those FAP operations that require knowing the front user (such as Type 6,
+Type 11, etc.) include an optional parameter "user", that may only set
+by privileged principals.
 
-Also, some server operations require knowing the front user (see Type 11).
-If authenticated principal is not the user, the user must be transmitted
-in request argument.
-
-Therefore, this decision is TBD. But for now, FAP aims to support
-authenticating users against a FAP service as if it were Kerberos.
+The primary method of authentication currently is a shared secret.
 
 = messages
 
@@ -103,12 +99,16 @@ However, we specify the explicit quit just in case.
 Type 6, new message, client to server:
 
 { "type":6,
+  "user":"wah",
   "section":"/shaft",
   "thread":"515",
   "name":"a4943458",
   "body":"As if anyone needed any further proof." }
 
 The section, thread, and name are respective keys.
+
+The "user" parameter is name of front-end principal, to be considered
+the author of the message. It can only be set by privileged principals.
 
 Type 7, new thread, client to server:
 
@@ -167,8 +167,8 @@ that was updated last. If "limit" is omitted, server assumes its
 built-in maximum number.
 
 The "user" parameter is name of front-end principal, used to generate
-the unread status. This paramter is TBD, subject to overall authentication
-scheme.
+the unread status. It can only be set by privileged principals.
+If it is omitted, the authenticated user is assumed.
 
 Type 11, thread list, server to client:
 
