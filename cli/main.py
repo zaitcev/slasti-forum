@@ -161,6 +161,19 @@ def send_newmsg(sock, sect, thread, body):
 def send_quit(sock):
     send_msg(sock, { "type": 5 })
 
+def check_ack(struc, method):
+    typenum = struc['type']
+    if typenum == 3:
+        print >>sys.stderr, \
+              "Expected type 2 after %s, received NAK `%s'" % \
+              (method, struc['error'])
+        sys.exit(1)
+    if typenum != 2:
+        print >>sys.stderr, \
+              "Expected type 2 after %s, received %d" % \
+              (method, typenum)
+        sys.exit(1)
+
 def do(cfg, cmd):
     ssock = socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
     ssock.connect(cfg["usock"])
@@ -185,10 +198,7 @@ def do(cfg, cmd):
 
         msg = rec_msg(ssock)
         struc = json.loads(msg)
-        if struc['type'] != 2:
-            print >>sys.stderr, \
-                  "Expected type 2 after login, received", struc['type']
-            sys.exit(1)
+        check_ack(struc, "login")
 
         ##
         ## Create a section
@@ -197,15 +207,7 @@ def do(cfg, cmd):
         send_newsec(ssock, secname, "Test", "A test section")
         msg = rec_msg(ssock)
         struc = json.loads(msg)
-        if struc['type'] == 3:
-            print >>sys.stderr, \
-                  "Expected type 2 after new section, received NAK `%s'" % \
-                  struc['error']
-            sys.exit(1)
-        if struc['type'] != 2:
-            print >>sys.stderr, \
-                  "Expected type 2 after new section, received", struc['type']
-            sys.exit(1)
+        check_ack(struc, "new section")
 
         ##
         ## Create a thread
@@ -213,10 +215,7 @@ def do(cfg, cmd):
         thrname = send_newthread(ssock, secname, "Test subject")
         msg = rec_msg(ssock)
         struc = json.loads(msg)
-        if struc['type'] != 2:
-            print >>sys.stderr, \
-                  "Expected type 2 after new thread, received", struc['type']
-            sys.exit(1)
+        check_ack(struc, "new thread")
 
         ##
         ## Create a message
@@ -226,10 +225,7 @@ def do(cfg, cmd):
         # P3
         print "received[%d]: "%len(msg), msg
         struc = json.loads(msg)
-        if struc['type'] != 2:
-            print >>sys.stderr, \
-                  "Expected type 2 after new message, received", struc['type']
-            sys.exit(1)
+        check_ack(struc, "new message")
 
         ## XXX has to check if anything was actually written
 
