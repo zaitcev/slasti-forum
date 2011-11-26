@@ -7,6 +7,7 @@
 
 import base64
 import fcntl
+import hashlib
 import json
 import os
 import os.path
@@ -15,6 +16,7 @@ import socket
 import stat
 import struct
 import sys
+import types
 from iniparse import ConfigParser
 from ConfigParser import NoSectionError, NoOptionError, ParsingError
 
@@ -109,12 +111,15 @@ def skb_pull(mbufs, size):
 
 class Connection:
     def __init__(self, sock):
+        self.challenge = None
         self.sock = sock
         self.state = 0
+        self.user = None
         self.mbufs = []
         self.rcvd = 0
-    def mark_login(self):
+    def mark_login(self, username):
         self.state = 1
+        self.user = username
     def mark_dead(self):
         self.state = 2
 
@@ -150,6 +155,44 @@ def send_nak(conn, msg):
     jmsg = json.dumps(struc)
     msg = struct.pack("!I%ds"%len(jmsg), len(jmsg), jmsg)
     conn.sock.send(msg)
+
+def login(conn, struc, cfg):
+    try:
+        username = struc['user']
+        hashtype = struc['hash']
+        hashstr = struc['login']
+    except:
+        # TypeError or KeyError if wrong structure
+        send_nak(conn, "exception")
+        return
+
+    if hashtype != 'sha256':
+        send_nak(conn, "unknown hash")
+        return
+    if (not (type(username) is types.UnicodeType or
+             type(username) is types.StringType)) or len(username) == 0:
+        send_nak(conn, "bad user")
+        return
+    if not (type(hashstr) is types.UnicodeType or
+            type(hashstr) is types.StringType):
+        send_nak(conn, "bad hash")
+        return
+
+    # XXX Add more users.
+    if username != "admin":
+        send_nak(conn, "unknown user")
+        return
+    password = cfg['admin']
+
+    loghash = hashlib.sha256()
+    loghash.update(conn.challenge+password)
+    logstr = loghash.hexdigest()
+    if logstr != hashstr:
+        send_nak(conn, "login incorrect")
+        return
+
+    conn.mark_login(username)
+    send_ack(conn)
 
 def new_section(conn, struc, cfg):
     if struc['name'][0:1] != "/":
@@ -232,13 +275,21 @@ def new_message(conn, struc, cfg):
         return
 
     try:
+        username = struc['user']
+    except:
+        username = conn.user
+
+    try:
         f = open(cfg['base']+sect+'/'+thrd+'/'+struc['name'], "w+")
     except IOError, e:
         send_nak(conn, "exception on summary")
         return
 
-    f.write(struc['body'])
+    # XXX Maybe write as JSON on the back-end too?
+    f.write("%s\n" % username)
     f.write("\n")
+    f.write(struc['body'])
+    # f.write("\n")
 
     f.close()
 
@@ -249,11 +300,15 @@ def recv_msg(conn, msg, cfg):
     print "svc-rcvd[%d]: "%len(msg), msg
     struc = json.loads(msg)
 
+    # Type 1 is the only message permitted when conn.state is not 1 (logged-in).
     if struc['type'] == 1:
-        # XXX verify password
-        conn.mark_login()
-        send_ack(conn)
-    elif struc['type'] == 4:
+        login(conn, struc, cfg)
+        return
+    if conn.state != 1:
+        send_nak(conn, "bad login state %d" % conn.state)
+        return
+
+    if struc['type'] == 4:
         new_section(conn, struc, cfg)
     elif struc['type'] == 5:
         conn.mark_dead()
@@ -296,7 +351,8 @@ def recv_event(conn, cfg):
     return
 
 def send_challenge(conn):
-    chstr = base64.b64encode(os.urandom(4))
+    conn.challenge = os.urandom(4)
+    chstr = base64.b64encode(conn.challenge)
     struc = { "type": 0, "challenge": chstr }
     jmsg = json.dumps(struc)
     msg = struct.pack("!I%ds"%len(jmsg), len(jmsg), jmsg)
@@ -341,11 +397,6 @@ def do(cfg):
                         poller.unregister(fd)
                         connections[fd] = None
                     elif event[1] & select.POLLIN:
-                        # P3
-                        if conn.state == 0:
-                            print "connection found, no session"
-                        else:
-                            print "connection found, has a session"
                         recv_event(conn, cfg)
                         if conn.state == 2:
                             poller.unregister(fd)
