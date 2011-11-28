@@ -7,6 +7,7 @@
 
 import base64
 import fcntl
+import forumlib
 import hashlib
 import json
 import os
@@ -82,32 +83,6 @@ def config(cfgname, inisect):
 
     config_check(cfg)
     return cfg
-
-# XXX Find a way to share this with cli/.
-# Pull a bytearray of size bytes out of the list of strings, copy it out.
-def skb_pull_copy(mbufs, size):
-    v = bytearray(size)
-    mx = 0
-    x = 0
-    done = 0
-    while done < size:
-       mbuf = mbufs[mx]
-       steplen = size - done
-       if len(mbuf) < steplen:
-           steplen = len(mbuf)
-       v[done:done+steplen] = mbuf[x:x+steplen]
-       done += steplen
-       x += steplen
-       if x >= len(mbuf):
-           x = 0
-           mx += 1
-    return v
-
-# Pull a bytearray from mbufs and (in the future XXX) remove from mbufs,
-# in order to permit repeated pull calls when the message length is known.
-# XXX For now, we just do nothing... so it's the same deal as skb_pull_copy.
-def skb_pull(mbufs, size):
-    return skb_pull_copy(mbufs, size)
 
 class Connection:
     def __init__(self, sock):
@@ -331,7 +306,7 @@ def recv_event(conn, cfg):
 
     if conn.rcvd < 4:
         return
-    hdr = skb_pull_copy(conn.mbufs, 4)
+    hdr = forumlib.skb_pull_copy(conn.mbufs, 4)
 
     # This produces a string if hdr is an str. Works great for bytearray.
     length = hdr[1]*256*256 + hdr[2]*256 + hdr[3]
@@ -340,7 +315,7 @@ def recv_event(conn, cfg):
 
     if conn.rcvd < 4 + length:
         return
-    buf = skb_pull(conn.mbufs, 4 + length)
+    buf = forumlib.skb_pull(conn.mbufs, 4 + length)
 
     recv_msg(conn, str(buf[4:]), cfg)
 

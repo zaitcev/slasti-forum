@@ -28,7 +28,7 @@ EOF
 rm -f $sock
 # This rm helps to fail if the server fails to write a good pidfile.
 rm -f $pidf
-python ./svc/main.py "$testconf" &
+PYTHONPATH=$(pwd) python ./svc/main.py "$testconf" &
 svcpid=$!
 
 # XXX is this enough? too much?
@@ -50,7 +50,7 @@ cleanup () {
 }
 
 # Test 1: basic operation
-python ./cli/main.py "$testconf" test1
+PYTHONPATH=$(pwd) python ./cli/main.py "$testconf" test1
 if [ $? != 0 ]; then
     echo "FAILED: basic" >&2
     cleanup

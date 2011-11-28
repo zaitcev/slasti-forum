@@ -7,6 +7,7 @@
 
 import base64
 import binascii
+import forumlib
 import hashlib
 import json
 import os
@@ -58,32 +59,6 @@ def config(cfgname):
 
     return cfg
 
-# XXX Find a way to share this with svc/.
-# Pull a bytearray of size bytes out of the list of strings, copy it out.
-def skb_pull_copy(mbufs, size):
-    v = bytearray(size)
-    mx = 0
-    x = 0
-    done = 0
-    while done < size:
-       mbuf = mbufs[mx]
-       steplen = size - done
-       if len(mbuf) < steplen:
-           steplen = len(mbuf)
-       v[done:done+steplen] = mbuf[x:x+steplen]
-       done += steplen
-       x += steplen
-       if x >= len(mbuf):
-           x = 0
-           mx += 1
-    return v
-
-# Pull a bytearray from mbufs and (in the future XXX) remove from mbufs,
-# in order to permit repeated pull calls when the message length is known.
-# XXX For now, we just do nothing... so it's the same deal as skb_pull_copy.
-def skb_pull(mbufs, size):
-    return skb_pull_copy(mbufs, size)
-
 # Receive a FAP message, using the low-level framing.
 # XXX The rougue client can hang us by sending a partial message and no data.
 def rec_msg(sock):
@@ -102,7 +77,7 @@ def rec_msg(sock):
         mbufs.append(mbuf)
         rcvd += len(mbuf)
 
-    hdr = skb_pull_copy(mbufs, 4)
+    hdr = forumlib.skb_pull_copy(mbufs, 4)
 
     # This produces a string if hdr is an str. Works great for bytearray.
     length = hdr[1]*256*256 + hdr[2]*256 + hdr[3]
@@ -120,7 +95,7 @@ def rec_msg(sock):
         mbufs.append(mbuf)
         rcvd += len(mbuf)
 
-    buf = skb_pull(mbufs, 4 + length)
+    buf = forumlib.skb_pull(mbufs, 4 + length)
 
     # Is this a double copy? Not very efficient, if so.
     return str(buf[4:])
