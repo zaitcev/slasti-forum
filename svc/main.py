@@ -131,7 +131,7 @@ def send_nak(conn, msg):
     msg = struct.pack("!I%ds"%len(jmsg), len(jmsg), jmsg)
     conn.sock.send(msg)
 
-def login(conn, struc, cfg):
+def login(cfg, conn, struc):
     try:
         username = struc['user']
         hashtype = struc['hash']
@@ -169,7 +169,7 @@ def login(conn, struc, cfg):
     conn.mark_login(username)
     send_ack(conn)
 
-def new_section(conn, struc, cfg):
+def new_section(cfg, conn, struc):
     if struc['name'][0:1] != "/":
         send_nak(conn, "no leading slash")
         return
@@ -196,7 +196,7 @@ def new_section(conn, struc, cfg):
 
     send_ack(conn)
 
-def new_thread(conn, struc, cfg):
+def new_thread(cfg, conn, struc):
     try:
         sect = struc['section']
         if sect[0:1] != "/":
@@ -234,7 +234,7 @@ def new_thread(conn, struc, cfg):
 
     send_ack(conn)
 
-def new_message(conn, struc, cfg):
+def new_message(cfg, conn, struc):
     try:
         sect = struc['section']
         if sect[0:1] != "/":
@@ -270,31 +270,31 @@ def new_message(conn, struc, cfg):
 
     send_ack(conn)
 
-def recv_msg(conn, msg, cfg):
+def recv_msg(cfg, conn, msg):
     # P3
     print "svc-rcvd[%d]: "%len(msg), msg
     struc = json.loads(msg)
 
     # Type 1 is the only message permitted when conn.state is not 1 (logged-in).
     if struc['type'] == 1:
-        login(conn, struc, cfg)
+        login(cfg, conn, struc)
         return
     if conn.state != 1:
         send_nak(conn, "bad login state %d" % conn.state)
         return
 
     if struc['type'] == 4:
-        new_section(conn, struc, cfg)
+        new_section(cfg, conn, struc)
     elif struc['type'] == 5:
         conn.mark_dead()
     elif struc['type'] == 6:
-        new_message(conn, struc, cfg)
+        new_message(cfg, conn, struc)
     elif struc['type'] == 7:
-        new_thread(conn, struc, cfg)
+        new_thread(cfg, conn, struc)
     else:
         send_nak(conn, "unknown msg type %s" % str(struc['type']))
 
-def recv_event(conn, cfg):
+def recv_event(cfg, conn):
     # Always receive the socket data, or else the poll would loop.
     mbuf = conn.sock.recv(4096)
     if mbuf == None:
@@ -317,7 +317,7 @@ def recv_event(conn, cfg):
         return
     buf = forumlib.skb_pull(conn.mbufs, 4 + length)
 
-    recv_msg(conn, str(buf[4:]), cfg)
+    recv_msg(cfg, conn, str(buf[4:]))
 
     # XXX Fix this once skb_pull works as intended.
     conn.mbufs = []
@@ -372,7 +372,7 @@ def do(cfg):
                         poller.unregister(fd)
                         connections[fd] = None
                     elif event[1] & select.POLLIN:
-                        recv_event(conn, cfg)
+                        recv_event(cfg, conn)
                         if conn.state == 2:
                             poller.unregister(fd)
                             connections[fd] = None
