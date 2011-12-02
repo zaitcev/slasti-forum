@@ -134,10 +134,10 @@ We do not offer selectors here, such as listing by bundle.
 Type 9, section list, server to client:
 
 { "type":9,
+  "v":
   [
     { "name":"/shaft",
       "bundle":"main",
-      "name":"/shaft",
       "title":"Everything SHAFT",
       "desc":"Updates and discussions of studio SHAFT and Akayuki Shinbo" }
   ]
@@ -174,11 +174,13 @@ Type 11, thread list, server to client:
 
 { "type":11,
   "mark": "516",
-  [
-    { "name"   : "515",
-      "subject": "Shinbo lost it",
-      "unread" : 1 }
-  ]
+  "v": [
+     { "name"   : "514",
+       "subject": "Stalking in Ebisu",
+       "unread" : 1 },
+     { "name"   : "515",
+       "subject": "Shinbo lost it",
+       "unread" : 0 } ]
 }
 
 The return list may deliver a "mark" parameter, or the name where next

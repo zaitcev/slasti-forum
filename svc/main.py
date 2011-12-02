@@ -15,6 +15,7 @@ import os.path
 import select
 import socket
 import stat
+import string
 import struct
 import sys
 import types
@@ -119,17 +120,19 @@ def write_pidfile(fname):
     # not closing the fd, keep the lock
     return fd
 
-def send_ack(conn):
-    struc = { "type": 2 }
+def send_msg(sock, struc):
     jmsg = json.dumps(struc)
-    msg = struct.pack("!I%ds"%len(jmsg), len(jmsg), jmsg)
-    conn.sock.send(msg)
+    jlen = len(jmsg)
+    if jlen >= 0x1000000:
+        raise AppError("message too long")
+    msg = struct.pack("!I%ds"%jlen, jlen, jmsg)
+    sock.send(msg)
+
+def send_ack(conn):
+    send_msg(conn.sock, { "type": 2 })
 
 def send_nak(conn, msg):
-    struc = { "type": 3, "error": msg }
-    jmsg = json.dumps(struc)
-    msg = struct.pack("!I%ds"%len(jmsg), len(jmsg), jmsg)
-    conn.sock.send(msg)
+    send_msg(conn.sock, { "type": 3, "error": msg })
 
 def login(cfg, conn, struc):
     try:
@@ -170,11 +173,20 @@ def login(cfg, conn, struc):
     send_ack(conn)
 
 def new_section(cfg, conn, struc):
-    if struc['name'][0:1] != "/":
+    try:
+        secname = struc['name']
+        sectitle = struc['title']
+        secdesc = struc['desc']
+    except:
+        # TypeError or KeyError if wrong structure
+        send_nak(conn, "exception")
+        return
+
+    if secname[0:1] != "/":
         send_nak(conn, "no leading slash")
         return
     try:
-        os.mkdir(cfg['base']+struc['name'])
+        os.mkdir(cfg['base']+secname+'.dir')
     except OSError, e:
         send_nak(conn, "unable to create")
         return
@@ -184,12 +196,14 @@ def new_section(cfg, conn, struc):
         return
 
     try:
-        f = open(cfg['base']+struc['name']+'.sum', "w+")
+        f = open(cfg['base']+secname+'.sum', "w+")
     except IOError, e:
         send_nak(conn, "exception on summary")
         return
 
-    f.write(struc['title'])
+    f.write(sectitle)
+    f.write("\n")
+    f.write(secdesc)
     f.write("\n")
 
     f.close()
@@ -206,13 +220,13 @@ def new_thread(cfg, conn, struc):
         # TypeError or KeyError if wrong structure
         send_nak(conn, "exception")
         return
-    if not os.path.isdir(cfg['base']+sect):
+    if not os.path.isdir(cfg['base']+sect+'.dir'):
         send_nak(conn, "bad section")
         return
 
     try:
         # XXX the 'name' needs to be validated against slash and '..'
-        os.mkdir(cfg['base']+sect+'/'+struc['name'])
+        os.mkdir(cfg['base']+sect+'.dir/'+struc['name'])
     except OSError, e:
         send_nak(conn, "unable to create")
         return
@@ -222,7 +236,7 @@ def new_thread(cfg, conn, struc):
         return
 
     try:
-        f = open(cfg['base']+sect+'/'+struc['name']+'.sum', "w+")
+        f = open(cfg['base']+sect+'.dir/'+struc['name']+'.sum', "w+")
     except IOError, e:
         send_nak(conn, "exception on summary")
         return
@@ -245,7 +259,7 @@ def new_message(cfg, conn, struc):
         # TypeError or KeyError if wrong structure
         send_nak(conn, "exception")
         return
-    if not os.path.isdir(cfg['base']+sect+'/'+thrd):
+    if not os.path.isdir(cfg['base']+sect+'.dir/'+thrd):
         send_nak(conn, "bad thread path")
         return
 
@@ -255,7 +269,7 @@ def new_message(cfg, conn, struc):
         username = conn.user
 
     try:
-        f = open(cfg['base']+sect+'/'+thrd+'/'+struc['name'], "w+")
+        f = open(cfg['base']+sect+'.dir/'+thrd+'/'+struc['name'], "w+")
     except IOError, e:
         send_nak(conn, "exception on summary")
         return
@@ -269,6 +283,46 @@ def new_message(cfg, conn, struc):
     f.close()
 
     send_ack(conn)
+
+def load_section(cfg, sect):
+    sdic = {}
+
+    sdic['name'] = '/'+sect
+
+    try:
+        f = open(cfg['base']+'/'+sect+'.sum', "r")
+    except IOError:
+        f = None
+    if f != None:
+        # XXX This cannot be the most pythoic way to drop trailing newline
+        s = f.readline()
+        if s[-1] == '\n':
+            s = s[:-1]
+        sdic['title'] = s
+        s = f.readline()
+        if s[-1] == '\n':
+            s = s[:-1]
+        sdic['desc'] = s
+        f.close()
+
+    return sdic
+
+def list_sections(cfg, conn):
+    toplist = os.listdir(cfg['base'])
+    toplist.sort()
+    # toplist.reverse()
+
+    vec = []
+    for name in toplist:
+        fname = name.encode('ascii')       # XXX try/except this one day
+        p = string.split(fname, '.')
+        if p[-1] == 'dir':
+            vec.append(load_section(cfg, fname[:-4]))
+
+    struc = {}
+    struc['type'] = 9
+    struc['v'] = vec
+    send_msg(conn.sock, struc)
 
 def recv_msg(cfg, conn, msg):
     # P3
@@ -291,6 +345,8 @@ def recv_msg(cfg, conn, msg):
         new_message(cfg, conn, struc)
     elif struc['type'] == 7:
         new_thread(cfg, conn, struc)
+    elif struc['type'] == 8:
+        list_sections(cfg, conn)
     else:
         send_nak(conn, "unknown msg type %s" % str(struc['type']))
 

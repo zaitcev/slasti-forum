@@ -177,12 +177,36 @@ def do(cfg, cmd):
 
         ##
         ## Create a section
+        ## Check that it's returned in the section list
         ##
         secname = "/test"
+
         send_newsec(ssock, secname, "Test", "A test section")
         msg = rec_msg(ssock)
         struc = json.loads(msg)
         check_ack(struc, "new section")
+
+        send_msg(ssock, { "type": 8 })
+        msg = rec_msg(ssock)
+        struc = json.loads(msg)
+        if struc['type'] != 9:
+            if struc['type'] == 3:
+                print >>sys.stderr, \
+                    "Expected type 9 after list section, received NAK `%s'" % \
+                    struc['error']
+            else:
+                print >>sys.stderr, \
+                    "Expected type 9 after list section, received %d" % \
+                    struc['type']
+            sys.exit(1)
+        vec = struc['v']
+        if len(vec) < 1:
+            print >>sys.stderr, "Empty section list"
+            sys.exit(1)
+        sdic = vec[0]
+        if sdic['name'] != secname:
+            print >>sys.stderr, "Bad name in the section list"
+            sys.exit(1)
 
         ##
         ## Create a thread
