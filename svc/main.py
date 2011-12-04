@@ -124,7 +124,7 @@ def send_msg(sock, struc):
     jmsg = json.dumps(struc)
     jlen = len(jmsg)
     if jlen >= 0x1000000:
-        raise AppError("message too long")
+        raise AppError("Message too long")
     msg = struct.pack("!I%ds"%jlen, jlen, jmsg)
     sock.send(msg)
 
@@ -350,13 +350,17 @@ def recv_msg(cfg, conn, msg):
     else:
         send_nak(conn, "unknown msg type %s" % str(struc['type']))
 
+# Receive a FAP message, using the low-level framing.
+# XXX A rougue client can hang us by sending a partial message and no data.
 def recv_event(cfg, conn):
     # Always receive the socket data, or else the poll would loop.
     mbuf = conn.sock.recv(4096)
     if mbuf == None:
         # Curious - does it happen? XXX
-        print >>sys.stderr, "Received None"
-        sys.exit(1)
+        raise AppError("Received None")
+    if len(mbuf) == 0:
+        # EOF - we do nothing and hope for a proper event in the main loop.
+        return
     conn.mbufs.append(mbuf)
     conn.rcvd += len(mbuf)
 
@@ -372,13 +376,9 @@ def recv_event(cfg, conn):
     if conn.rcvd < 4 + length:
         return
     buf = forumlib.skb_pull(conn.mbufs, 4 + length)
+    conn.rcvd -= len(buf)
 
     recv_msg(cfg, conn, str(buf[4:]))
-
-    # XXX Fix this once skb_pull works as intended.
-    conn.mbufs = []
-    conn.rcvd = 0
-
     return
 
 def send_challenge(conn):

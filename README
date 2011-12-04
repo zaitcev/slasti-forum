@@ -1,3 +1,6 @@
 Forum is a forum.
 
 zaitcev@yahoo.com
+
+TODO:
+ - logging (must capture tracebacks in the service)

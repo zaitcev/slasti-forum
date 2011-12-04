@@ -60,7 +60,6 @@ def config(cfgname):
     return cfg
 
 # Receive a FAP message, using the low-level framing.
-# XXX The rougue client can hang us by sending a partial message and no data.
 def rec_msg(sock):
     mbufs = []
     rcvd = 0

@@ -162,7 +162,7 @@ up to "limit" numer of threads in length.
 Threads are assumed to be sorted by the time they were updated,
 from newest to oldest. There is no parameter to set the sort order.
 
-If the "mark" parameter is omitted, listing beings from the thread
+If the "mark" parameter is omitted, listing begins from the thread
 that was updated last. If "limit" is omitted, server assumes its
 built-in maximum number.
 
