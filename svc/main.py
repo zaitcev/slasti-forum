@@ -139,8 +139,7 @@ def login(cfg, conn, struc):
         username = struc['user']
         hashtype = struc['hash']
         hashstr = struc['login']
-    except:
-        # TypeError or KeyError if wrong structure
+    except KeyError:
         send_nak(conn, "exception")
         return
 
@@ -177,8 +176,7 @@ def new_section(cfg, conn, struc):
         secname = struc['name']
         sectitle = struc['title']
         secdesc = struc['desc']
-    except:
-        # TypeError or KeyError if wrong structure
+    except KeyError:
         send_nak(conn, "exception")
         return
 
@@ -189,10 +187,6 @@ def new_section(cfg, conn, struc):
         os.mkdir(cfg['base']+secname+'.dir')
     except OSError, e:
         send_nak(conn, "unable to create")
-        return
-    except:
-        # TypeError or KeyError if wrong structure
-        send_nak(conn, "exception on create")
         return
 
     try:
@@ -324,31 +318,124 @@ def list_sections(cfg, conn):
     struc['v'] = vec
     send_msg(conn.sock, struc)
 
+def load_thread(cfg, secname, thrname):
+    sdic = {}
+
+    sdic['name'] = thrname
+    sdic['unread'] = 0
+
+    try:
+        f = open(cfg['base']+'/'+secname+'.dir/'+thrname+'.sum', "r")
+    except IOError:
+        f = None
+    if f != None:
+        s = f.readline()
+        if s[-1] == '\n':
+            s = s[:-1]
+        sdic['subject'] = s
+        f.close()
+
+    return sdic
+
+def list_threads(cfg, conn, struc):
+    try:
+        secname = struc['section']
+    except KeyError:
+        send_nak(conn, "exception no section")
+        return
+
+    #try:
+    #    username = struc['user']
+    #except KeyError as e:
+    #    send_nak(conn, "exception no user")
+    #    return
+
+    try:
+        if secname[0:1] != "/":
+            send_nak(conn, "no leading slash")
+            return
+    except TypeError:
+        send_nak(conn, "exception")
+        return
+
+    mark = None
+    if struc.has_key('mark'):
+        mark = struc['mark']
+
+    try:
+        limit = int(struc['limit'])
+    #except KeyError:
+    except KeyError as e:
+        limit = 0
+    except ValueError:
+        limit = 0
+
+    # XXX This is crying for a better backing store that can seek to mark.
+    toplist = os.listdir(cfg['base']+secname+'.dir')
+    toplist.sort()
+
+    newmark = None
+    cnt = 0
+    vec = []
+    for name in toplist:
+        if mark:
+            if name != mark:
+                continue
+            mark = None
+        fname = name.encode('ascii')       # XXX try/except this one day
+        if limit and cnt >= limit:
+            newmark = fname
+            break
+        p = string.split(fname, '.')
+        if p[-1] != 'sum':                 # XXX The .dir are kind of nasty
+            vec.append(load_thread(cfg, secname, fname))
+        cnt += 1
+
+    struc = {}
+    struc['type'] = 11
+    if newmark:
+        struct['mark'] = newmark
+    struc['v'] = vec
+    send_msg(conn.sock, struc)
+
 def recv_msg(cfg, conn, msg):
     # P3
     print "svc-rcvd[%d]: "%len(msg), msg
     struc = json.loads(msg)
 
+    try:
+        fap_type = struc['type']
+    except KeyError:
+        # send_nak() makes no sense in case of loss of framing, client is hosed
+        print >>sys.stderr, TAG+": Bad message type"
+        conn.mark_dead()
+        return
+    if not (type(fap_type) is types.IntType):
+        send_nak(conn, "bad message type")
+        return
+
     # Type 1 is the only message permitted when conn.state is not 1 (logged-in).
-    if struc['type'] == 1:
+    if fap_type == 1:
         login(cfg, conn, struc)
         return
     if conn.state != 1:
         send_nak(conn, "bad login state %d" % conn.state)
         return
 
-    if struc['type'] == 4:
+    if fap_type == 4:
         new_section(cfg, conn, struc)
-    elif struc['type'] == 5:
+    elif fap_type == 5:
         conn.mark_dead()
-    elif struc['type'] == 6:
+    elif fap_type == 6:
         new_message(cfg, conn, struc)
-    elif struc['type'] == 7:
+    elif fap_type == 7:
         new_thread(cfg, conn, struc)
-    elif struc['type'] == 8:
+    elif fap_type == 8:
         list_sections(cfg, conn)
+    elif fap_type == 10:
+        list_threads(cfg, conn, struc)
     else:
-        send_nak(conn, "unknown msg type %s" % str(struc['type']))
+        send_nak(conn, "unknown msg type %s" % str(fap_type))
 
 # Receive a FAP message, using the low-level framing.
 # XXX A rougue client can hang us by sending a partial message and no data.
@@ -449,7 +536,7 @@ def main(args):
     try:
         cfg = config(cfgname, "svc")
     except ConfigError, e:   # This is our exception. Other types traceback.
-        print >>sys.stderr, "Error in config file '" + cfgname + "':", e
+        print >>sys.stderr, TAG+": Error in config file '" + cfgname + "':", e
         sys.exit(1)
 
     try:

@@ -4,3 +4,4 @@ zaitcev@yahoo.com
 
 TODO:
  - logging (must capture tracebacks in the service)
+ - git-like data store with our own indices - no repeated opens for a list

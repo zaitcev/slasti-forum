@@ -215,6 +215,28 @@ def do(cfg, cmd):
         struc = json.loads(msg)
         check_ack(struc, "new thread")
 
+        send_msg(ssock, { "type": 10, "section": secname })
+        msg = rec_msg(ssock)
+        struc = json.loads(msg)
+        if struc['type'] != 11:
+            if struc['type'] == 3:
+                print >>sys.stderr, \
+                    "Expected type 11 after list thread, received NAK `%s'" % \
+                    struc['error']
+            else:
+                print >>sys.stderr, \
+                    "Expected type 11 after list thread, received %d" % \
+                    struc['type']
+            sys.exit(1)
+        vec = struc['v']
+        if len(vec) < 1:
+            print >>sys.stderr, "Empty thread list"
+            sys.exit(1)
+        sdic = vec[0]
+        if sdic['name'] != thrname:
+            print >>sys.stderr, "Bad name in thread list"
+            sys.exit(1)
+
         ##
         ## Create a message
         ##
