@@ -26,8 +26,6 @@ TAG = "forum-svc"
 USOCK = "/tmp/slasti-forum.sock"
 PIDFILE = "/var/run/slasti-forum-svc.pid"
 
-connections = {}
-
 class AppError(Exception):
     pass
 
@@ -480,6 +478,8 @@ def do(cfg):
     # P3
     print "base  : ", cfg["base"]
     print "socket: ", cfg["usock"]
+
+    connections = {}
 
     pidfd = write_pidfile(cfg["pidfile"])
 
